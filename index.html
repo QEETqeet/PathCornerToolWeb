@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Path Corner Tool</title>
+</head>
+<body>
+
+<h2>Qeet's Path Corner Interpolation Tool</h2>
+
+<table>
+<tr><td colspan="2"><b>Add node</b></td></tr>
+<tr><td>Name</td><td><input type="text" id="nName" value="p0"></td></tr>
+<tr>
+  <td>Position X Y Z</td>
+  <td>
+    <input type="number" id="nX" value="0" step="1">
+    <input type="number" id="nY" value="0" step="1">
+    <input type="number" id="nZ" value="0" step="1">
+    &nbsp; Step: <select id="posStep" onchange="updateSteps()">
+      <option value="1">1</option>
+      <option value="8">8</option>
+      <option value="32">32</option>
+      <option value="64" selected>64</option>
+      <option value="128">128</option>
+      <option value="256">256</option>
+    </select>
+  </td>
+</tr>
+<tr><td>Angles X Y Z</td><td>
+  <input type="number" id="nAX" value="0" step="1">
+  <input type="number" id="nAY" value="0" step="1">
+  <input type="number" id="nAZ" value="0" step="1">
+</td></tr>
+<tr><td></td><td><button onclick="addNode()">Add node</button></td></tr>
+</table>
+
+<hr>
+<b>Key nodes</b> (Ctrl+click or Shift+click to select multiple)<br><br>
+<select id="nodeList" size="8" style="width:560px" multiple onchange="onSelectNode()"></select><br>
+<button onclick="moveNode(-1)">Up</button>
+<button onclick="moveNode(1)">Down</button>
+<button onclick="removeNode()">Remove selected</button>
+
+<hr>
+<b>Edit selected node</b> (single selection only)<br><br>
+<table>
+<tr><td>Name</td><td><input type="text" id="eName"></td></tr>
+<tr><td>Position X Y Z</td><td>
+  <input type="number" id="eX" step="1">
+  <input type="number" id="eY" step="1">
+  <input type="number" id="eZ" step="1">
+</td></tr>
+<tr><td>Angles X Y Z</td><td>
+  <input type="number" id="eAX" step="1">
+  <input type="number" id="eAY" step="1">
+  <input type="number" id="eAZ" step="1">
+</td></tr>
+<tr><td></td><td><button onclick="applyEdit()">Apply changes</button></td></tr>
+</table>
+
+<hr>
+<b>Outgoing segment</b> <span id="segInfo"></span><br>
+<small>When multiple nodes are selected, "Apply to segment" applies to all their outgoing segments.</small><br><br>
+<table>
+<tr><td>Easing XY</td><td><select id="segExy"></select></td></tr>
+<tr><td>Easing Z</td><td><select id="segEz"></select></td></tr>
+<tr><td>Easing Angles</td><td><select id="segEa"></select></td></tr>
+<tr><td>Intermediate points</td><td>
+  <input type="number" id="segSteps" value="4" min="1" step="1" style="width:60px">
+  <span id="stepsNote"></span>
+</td></tr>
+<tr><td></td><td><button onclick="applySegment()">Apply to segment(s)</button></td></tr>
+</table>
+
+<hr>
+<b>Loop segment</b> (last node back to first, only used when Loop is checked)<br><br>
+<table>
+<tr><td>Easing XY</td><td><select id="loopExy"></select></td></tr>
+<tr><td>Easing Z</td><td><select id="loopEz"></select></td></tr>
+<tr><td>Easing Angles</td><td><select id="loopEa"></select></td></tr>
+<tr><td>Intermediate points</td><td><input type="number" id="loopSteps" value="4" min="1" step="1" style="width:60px"></td></tr>
+</table>
+
+<hr>
+<b>Export</b><br><br>
+<table>
+<tr><td>Prefix</td><td><input type="text" id="expPrefix" value="corner"></td></tr>
+<tr><td>Speed</td><td><input type="number" id="expSpeed" value="1" step="0.00001"></td></tr>
+<tr><td>Loop</td><td><input type="checkbox" id="expLoop" checked> (uses Loop segment settings above)</td></tr>
+</table>
+<br>
+<button onclick="doGenerate()">Generate entities</button>
+<button onclick="doCopy()">Copy</button>
+<button onclick="doSave()">Save .txt</button>
+<button onclick="clearAll()">Clear all</button>
+<br><br>
+<textarea id="exportBox" rows="20" cols="80" readonly>-- add at least 2 nodes, then generate --</textarea>
+
+<script>
+var EASING_NAMES = [
+  "Linear",
+  "Sine In","Sine Out","Sine In & Out",
+  "Quad In","Quad Out","Quad In & Out",
+  "Cubic In","Cubic Out","Cubic In & Out",
+  "Expo In","Expo Out","Expo In & Out",
+  "Back In","Back Out","Back In & Out",
+  "Elastic In","Elastic Out","Elastic In & Out",
+  "Bounce In","Bounce Out","Bounce In & Out",
+  "Hold"
+];
+
+function easingFn(name, t) {
+  switch(name) {
+    case "Linear": return t;
+    case "Sine In": return 1 - Math.cos(t * Math.PI / 2);
+    case "Sine Out": return Math.sin(t * Math.PI / 2);
+    case "Sine In & Out": return -(Math.cos(Math.PI * t) - 1) / 2;
+    case "Quad In": return t * t;
+    case "Quad Out": return 1 - (1-t)*(1-t);
+    case "Quad In & Out": return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    case "Cubic In": return t*t*t;
+    case "Cubic Out": return 1-Math.pow(1-t,3);
+    case "Cubic In & Out": return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+    case "Expo In": return t===0?0:Math.pow(2,10*t-10);
+    case "Expo Out": return t===1?1:1-Math.pow(2,-10*t);
+    case "Expo In & Out": return t===0?0:t===1?1:t<0.5?Math.pow(2,20*t-10)/2:(2-Math.pow(2,-20*t+10))/2;
+    case "Back In": return 2.70158*t*t*t-1.70158*t*t;
+    case "Back Out": return 1+2.70158*Math.pow(t-1,3)+1.70158*Math.pow(t-1,2);
+    case "Back In & Out": var c=1.70158*1.525;return t<0.5?Math.pow(2*t,2)*((c+1)*2*t-c)/2:(Math.pow(2*t-2,2)*((c+1)*(2*t-2)+c)+2)/2;
+    case "Elastic In": return t===0||t===1?t:-Math.pow(2,10*t-10)*Math.sin((t*10-10.75)*2*Math.PI/3);
+    case "Elastic Out": return t===0||t===1?t:Math.pow(2,-10*t)*Math.sin((t*10-0.75)*2*Math.PI/3)+1;
+    case "Elastic In & Out": if(t===0||t===1)return t;var c2=2*Math.PI/4.5;return t<0.5?-(Math.pow(2,20*t-10)*Math.sin((20*t-11.125)*c2))/2:Math.pow(2,-20*t+10)*Math.sin((20*t-11.125)*c2)/2+1;
+    case "Bounce Out": var n=7.5625,d=2.75;if(t<1/d)return n*t*t;if(t<2/d){t-=1.5/d;return n*t*t+0.75;}if(t<2.5/d){t-=2.25/d;return n*t*t+0.9375;}t-=2.625/d;return n*t*t+0.984375;
+    case "Bounce In": return 1-easingFn("Bounce Out",1-t);
+    case "Bounce In & Out": return t<0.5?(1-easingFn("Bounce Out",1-2*t))/2:(1+easingFn("Bounce Out",2*t-1))/2;
+    case "Hold": return 0;
+    default: return t;
+  }
+}
+
+var nodes = [];
+var segments = [];
+var selIndices = [];
+var nodeCounter = 0;
+
+function updateSteps() {
+  var step = document.getElementById("posStep").value;
+  var ids = ["nX","nY","nZ","eX","eY","eZ"];
+  for (var i = 0; i < ids.length; i++) {
+    document.getElementById(ids[i]).step = step;
+  }
+}
+
+function populateSelects() {
+  var ids = ["segExy","segEz","segEa","loopExy","loopEz","loopEa"];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    el.innerHTML = "";
+    for (var j = 0; j < EASING_NAMES.length; j++) {
+      var opt = document.createElement("option");
+      opt.value = EASING_NAMES[j];
+      opt.textContent = EASING_NAMES[j];
+      el.appendChild(opt);
+    }
+  }
+}
+
+function syncSegs() {
+  var need = Math.max(0, nodes.length - 1);
+  while (segments.length < need) segments.push({exy:"Linear",ez:"Linear",ea:"Linear",steps:4});
+  while (segments.length > need) segments.pop();
+}
+
+function gv(id) { return document.getElementById(id).value; }
+function gf(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+function addNode() {
+  var name = gv("nName").trim() || ("p" + nodeCounter);
+  nodes.push({name:name, x:gf("nX"),y:gf("nY"),z:gf("nZ"), ax:gf("nAX"),ay:gf("nAY"),az:gf("nAZ")});
+  nodeCounter++;
+  document.getElementById("nName").value = "p" + nodeCounter;
+  syncSegs();
+  renderNodes();
+  renderSeg();
+}
+
+function removeNode() {
+  if (!selIndices.length) return;
+  var toRemove = selIndices.slice().sort(function(a,b){return b-a;});
+  for (var i = 0; i < toRemove.length; i++) nodes.splice(toRemove[i], 1);
+  syncSegs();
+  selIndices = [];
+  renderNodes();
+  renderSeg();
+}
+
+function moveNode(d) {
+  if (selIndices.length !== 1) return;
+  var idx = selIndices[0];
+  var j = idx + d;
+  if (j < 0 || j >= nodes.length) return;
+  var tmp = nodes[idx]; nodes[idx] = nodes[j]; nodes[j] = tmp;
+  selIndices = [j];
+  syncSegs();
+  renderNodes();
+  renderSeg();
+}
+
+function onSelectNode() {
+  var el = document.getElementById("nodeList");
+  selIndices = [];
+  for (var i = 0; i < el.options.length; i++) {
+    if (el.options[i].selected) selIndices.push(i);
+  }
+  // Fill edit fields only when a single node is selected
+  if (selIndices.length === 1) {
+    var nd = nodes[selIndices[0]];
+    document.getElementById("eName").value = nd.name;
+    document.getElementById("eX").value = nd.x;
+    document.getElementById("eY").value = nd.y;
+    document.getElementById("eZ").value = nd.z;
+    document.getElementById("eAX").value = nd.ax;
+    document.getElementById("eAY").value = nd.ay;
+    document.getElementById("eAZ").value = nd.az;
+  }
+  renderSeg();
+}
+
+function applyEdit() {
+  if (selIndices.length !== 1) return;
+  var idx = selIndices[0];
+  nodes[idx] = {name:gv("eName"), x:gf("eX"),y:gf("eY"),z:gf("eZ"), ax:gf("eAX"),ay:gf("eAY"),az:gf("eAZ")};
+  renderNodes();
+}
+
+function applySegment() {
+  var cfg = {
+    exy:   gv("segExy"),
+    ez:    gv("segEz"),
+    ea:    gv("segEa"),
+    steps: Math.max(1, parseInt(gv("segSteps")) || 4)
+  };
+  // Apply to all selected nodes that have an outgoing segment
+  for (var i = 0; i < selIndices.length; i++) {
+    var idx = selIndices[i];
+    if (idx < nodes.length - 1) {
+      segments[idx] = {exy:cfg.exy, ez:cfg.ez, ea:cfg.ea, steps:cfg.steps};
+    }
+  }
+  renderSeg();
+}
+
+function renderNodes() {
+  var el = document.getElementById("nodeList");
+  el.innerHTML = "";
+  for (var i = 0; i < nodes.length; i++) {
+    var opt = document.createElement("option");
+    var nd = nodes[i];
+    opt.textContent = "[" + (i+1) + "] " + nd.name + "   (" + nd.x + ", " + nd.y + ", " + nd.z + ")";
+    for (var j = 0; j < selIndices.length; j++) {
+      if (selIndices[j] === i) { opt.selected = true; break; }
+    }
+    el.appendChild(opt);
+  }
+}
+
+function isHoldSeg(cfg) {
+  return cfg.exy === "Hold" || cfg.ez === "Hold" || cfg.ea === "Hold";
+}
+
+function renderSeg() {
+  var info = document.getElementById("segInfo");
+  var note = document.getElementById("stepsNote");
+  if (selIndices.length === 1 && selIndices[0] < nodes.length - 1) {
+    var idx = selIndices[0];
+    var cfg = segments[idx] || {exy:"Linear",ez:"Linear",ea:"Linear",steps:4};
+    info.textContent = "( " + nodes[idx].name + " to " + nodes[idx+1].name + " )";
+    document.getElementById("segExy").value = cfg.exy;
+    document.getElementById("segEz").value  = cfg.ez;
+    document.getElementById("segEa").value  = cfg.ea;
+    document.getElementById("segSteps").value = cfg.steps;
+    note.textContent = isHoldSeg(cfg) ? "Hold: stays at origin, jumps instantly to destination (speed 0)." : "";
+  } else if (selIndices.length > 1) {
+    info.textContent = "( " + selIndices.length + " nodes selected, segment settings will apply to all )";
+    note.textContent = "";
+  } else {
+    info.textContent = "( select a node that has a next )";
+    note.textContent = "";
+  }
+}
+
+function buildSegPts(a, b, cfg) {
+  var pts = [];
+  var n = Math.max(1, cfg.steps);
+  if (isHoldSeg(cfg)) {
+    pts.push({x:a.x,y:a.y,z:a.z,ax:a.ax,ay:a.ay,az:a.az,overrideSpeed:null});
+    pts.push({x:a.x,y:a.y,z:a.z,ax:a.ax,ay:a.ay,az:a.az,overrideSpeed:"0"});
+  } else {
+    for (var k = 0; k < n; k++) {
+      var txy = easingFn(cfg.exy, k/n);
+      var tz  = easingFn(cfg.ez,  k/n);
+      var ta  = easingFn(cfg.ea,  k/n);
+      pts.push({
+        x:  a.x  + (b.x  - a.x)  * txy,
+        y:  a.y  + (b.y  - a.y)  * txy,
+        z:  a.z  + (b.z  - a.z)  * tz,
+        ax: a.ax + (b.ax - a.ax) * ta,
+        ay: a.ay + (b.ay - a.ay) * ta,
+        az: a.az + (b.az - a.az) * ta,
+        overrideSpeed: null
+      });
+    }
+  }
+  return pts;
+}
+
+function buildInterp() {
+  if (nodes.length < 2) return [];
+  var pts = [];
+  for (var i = 0; i < nodes.length - 1; i++) {
+    var cfg = segments[i] || {exy:"Linear",ez:"Linear",ea:"Linear",steps:4};
+    var segPts = buildSegPts(nodes[i], nodes[i+1], cfg);
+    for (var j = 0; j < segPts.length; j++) pts.push(segPts[j]);
+  }
+  var l = nodes[nodes.length-1];
+  pts.push({x:l.x,y:l.y,z:l.z,ax:l.ax,ay:l.ay,az:l.az,overrideSpeed:null});
+  return pts;
+}
+
+function fmt(v) {
+  return parseFloat(v.toFixed(5)).toString();
+}
+
+function doGenerate() {
+  if (nodes.length < 2) {
+    document.getElementById("exportBox").value = "Add at least 2 nodes first.";
+    return;
+  }
+  var pts = buildInterp();
+  var loop = document.getElementById("expLoop").checked;
+
+  // If loop, append the loop segment points (last node back to first)
+  if (loop) {
+    var loopCfg = {
+      exy:   gv("loopExy"),
+      ez:    gv("loopEz"),
+      ea:    gv("loopEa"),
+      steps: Math.max(1, parseInt(gv("loopSteps")) || 4)
+    };
+    var loopPts = buildSegPts(nodes[nodes.length-1], nodes[0], loopCfg);
+    for (var i = 0; i < loopPts.length; i++) pts.push(loopPts[i]);
+  }
+
+  var prefix = gv("expPrefix") || "corner";
+  var speed  = gv("expSpeed") || "1";
+  var n = pts.length;
+  var lines = [];
+
+  for (var i = 0; i < n; i++) {
+    var p = pts[i];
+    var target;
+    if (i < n - 1) {
+      target = prefix + (i+1);
+    } else if (loop) {
+      target = prefix + "0";
+    } else {
+      target = "";
+    }
+    var spd = p.overrideSpeed !== null ? p.overrideSpeed : speed;
+    lines.push("// entity " + i);
+    lines.push("{");
+    lines.push('"classname" "path_corner"');
+    lines.push('"targetname" "' + prefix + i + '"');
+    if (target) lines.push('"target" "' + target + '"');
+    lines.push('"origin" "' + fmt(p.x) + " " + fmt(p.y) + " " + fmt(p.z) + '"');
+    lines.push('"angles" "' + fmt(p.ax) + " " + fmt(p.ay) + " " + fmt(p.az) + '"');
+    lines.push('"speed" "' + spd + '"');
+    lines.push('"smooth" "0"');
+    lines.push("}");
+  }
+  document.getElementById("exportBox").value = lines.join("\n");
+}
+
+function doCopy() {
+  navigator.clipboard.writeText(document.getElementById("exportBox").value);
+}
+
+function doSave() {
+  var txt = document.getElementById("exportBox").value;
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([txt],{type:"text/plain"}));
+  a.download = "path_corners.txt";
+  a.click();
+}
+
+function clearAll() {
+  nodes.length = 0; segments.length = 0; selIndices = [];
+  renderNodes(); renderSeg();
+  document.getElementById("exportBox").value = "-- add at least 2 nodes, then generate --";
+}
+
+populateSelects();
+updateSteps();
+</script>
+</body>
+</html>
